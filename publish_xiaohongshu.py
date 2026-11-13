@@ -59,7 +59,16 @@ def generate_xhs_images(template_id: str = "1") -> list[Path]:
     XHS_ASSETS_DIR.mkdir(parents=True, exist_ok=True)
     W, H = 1080, 1440  # 小红书黄金 3:4 竖图比例
 
-    if template_id == "2":
+    if template_id == "3":
+        bg_main = (30, 27, 75)
+        badge_txt = "🔥 英文论文 / SPSS 实证 / Python 源码"
+        h1_txt = "英文论文舆情分析"
+        h2_txt = "Reddit / YouTube"
+        h3_txt = "数据集 + Python源码整理"
+        accent_c = (167, 139, 250)
+        sub_txt = "含完整清洗注释代码 + 双格式 Excel/CSV，直接喂给 SPSS / R"
+        sheet_title = "📊 [论文数据集]_Overseas_Sentiment_Dataset.xlsx"
+    elif template_id == "2":
         bg_main = (6, 44, 48)
         badge_txt = "🔥 亚马逊 / 独立站 / TikTok 选品干货"
         h1_txt = "跨境选品怎么扒"
@@ -227,6 +236,19 @@ XHS_NOTE_TEMPLATES = {
         ),
         "tags": ["跨境电商", "亚马逊选品", "海外市场调研", "Reddit", "YouTube", "数据分析"],
     },
+    "3": {
+        "title": "写英文论文怎么抓海外社媒评论做情感分析",  # 19个字符，严格 <= 20 字符限制
+        "body": (
+            "很多写英文 Essay、毕业论文或者做海外传播研究的同学，最头疼的就是怎么获取干净的 Reddit、YouTube 或海外新闻社区评论数据集。\n\n"
+            "如果手动复制粘贴，不仅几百条就要弄一整天，导入 SPSS、Stata 或 Python 做 Sentiment Analysis（情感分析）和词频统计时还会遇到一堆表情乱码和换行错位。\n\n"
+            "这里分享一套我整理好的 Python 自动化采集与清洗流程：\n"
+            "1. 输入研究关键词或指定帖子/视频链接，自动批量抓取标题、评论正文、作者、点赞数和精确到秒的时间戳\n"
+            "2. 自动剔除乱码字符与多余换行，同时输出带筛选表头的 .xlsx 和标准 UTF-8 .csv\n"
+            "3. 代码结构清晰，附带完整中文注释，直接放进论文附录或跑实证分析都非常省心！\n\n"
+            "正在写论文或做海外舆情课题的朋友，可以在评论区留一下你研究的平台或关键词，看到都会回！"
+        ),
+        "tags": ["留学生论文", "情感分析", "Python数据分析", "Reddit", "YouTube", "毕业论文", "实证分析"],
+    },
 }
 
 
@@ -242,7 +264,44 @@ class XhsMcpCdpClient:
         self.ws = None
         self._msg_id = 0
 
+    def ensure_edge_cdp(self):
+        """如果 9222 端口未启动，自动拉起专属 UserDataCDP 目录的 Edge 实例（保留长期登录态）"""
+        try:
+            if requests.get(f"http://{self.host}:{self.port}/json/version", timeout=1.5).ok:
+                return
+        except Exception:
+            pass
+
+        edge_exe = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+        user_data_dir = os.path.join(
+            os.environ.get("LOCALAPPDATA", r"C:\Users\ZhuanZ\AppData\Local"),
+            "Microsoft",
+            "Edge",
+            "UserDataCDP",
+        )
+        print(f"[XHS-MCP] 检测到 Edge 未启动，正在从头拉起小红书专属 Edge 浏览器 (端口 {self.port})...")
+        subprocess.Popen(
+            [
+                edge_exe,
+                f"--remote-debugging-port={self.port}",
+                f"--user-data-dir={user_data_dir}",
+                XHS_PUBLISH_URL,
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        for _ in range(30):
+            time.sleep(0.5)
+            try:
+                if requests.get(f"http://{self.host}:{self.port}/json/version", timeout=1).ok:
+                    time.sleep(1.5)
+                    return
+            except Exception:
+                pass
+        raise RuntimeError("无法启动 Edge 9222 调试端口")
+
     def connect(self):
+        self.ensure_edge_cdp()
         targets = requests.get(f"http://{self.host}:{self.port}/json", timeout=5).json()
         pages = [t for t in targets if t.get("type") == "page"]
         ws_url = None
@@ -332,8 +391,27 @@ class XhsMcpCdpClient:
 
         cur_url = self.eval_js("window.location.href") or ""
         if "login" in cur_url.lower():
-            print("[ERR] 当前 Edge 未登录小红书创作者中心，请先在浏览器完成登录！")
-            return False
+            print("\n============================================================")
+            print("⏸️ [等待登录] 检测到当前需要登录小红书创作者中心！")
+            print("👉 请在刚刚弹出的 Edge 浏览器窗口中【扫码或短信登录】。")
+            print("👉 你登录成功后，脚本会自动检测并立即继续发帖（最长等待 180 秒）...")
+            print("============================================================\n", flush=True)
+            logged_in = False
+            for _ in range(180):
+                time.sleep(1.0)
+                now_url = self.eval_js("window.location.href") or ""
+                if "login" not in now_url.lower() and "creator.xiaohongshu.com" in now_url.lower():
+                    print("[XHS-MCP] ✅ 检测到你已登录成功！正在自动继续执行发布流程...", flush=True)
+                    logged_in = True
+                    break
+            if not logged_in:
+                print("[ERR] 等待登录超时（180秒），请登录后重新运行脚本。")
+                return False
+            # 登录跳转完成后重新导航确保进入发布页
+            time.sleep(2.0)
+            if "/publish/publish" not in (self.eval_js("window.location.href") or ""):
+                self.send("Page.navigate", {"url": XHS_PUBLISH_URL})
+                time.sleep(3.5)
 
         # 2. 清理可能遮挡 TAB 的浮层 (移植自 xiaohongshu/publish.go: dismissPopCover)
         self.eval_js("""(() => {
@@ -492,7 +570,7 @@ class XhsMcpCdpClient:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="基于 xiaohongshu-mcp 核心逻辑的小红书自动配图与发布工具")
-    parser.add_argument("--template", choices=["1", "2"], default="1", help="选择笔记模板：1=留学生论文/综合导出，2=跨境电商选品差评分析")
+    parser.add_argument("--template", choices=["1", "2", "3"], default="3", help="选择笔记模板：1=综合导出，2=跨境选品差评分析，3=英文论文情感分析+源码")
     parser.add_argument("--no-publish", action="store_true", help="只自动上传图片和填写标题正文话题，不点最终发布按钮")
     parser.add_argument("--check-status", action="store_true", help="仅检查当前已发布的笔记列表状态")
     parser.add_argument("--fix-and-submit", action="store_true", help="直接在当前已打开的发布页修正标题长度并点击发布")

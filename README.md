@@ -26,3 +26,6 @@ python run.py web --url "https://example.com" --limit 80
 
 ## 接单指南
 可直接复制发布的闲鱼宝贝标题、详情页文案、小红书引流帖模板及报价单，请查看根目录下的 **`闲鱼小红书接单实战手册.md`**。
+
+
+python publish_xiaohongshu.py
