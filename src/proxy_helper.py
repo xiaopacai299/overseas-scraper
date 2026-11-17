@@ -28,6 +28,11 @@ def get_local_proxy_url() -> str:
 
 def get_requests_proxies() -> dict[str, str]:
     proxy_url = get_local_proxy_url()
+    if proxy_url.startswith("socks"):
+        try:
+            import socks  # noqa: F401
+        except ImportError:
+            proxy_url = "http://127.0.0.1:10808"
     return {
         "http": proxy_url,
         "https": proxy_url,

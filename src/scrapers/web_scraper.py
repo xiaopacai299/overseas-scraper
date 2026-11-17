@@ -1,5 +1,4 @@
 from urllib.parse import urljoin
-from bs4 import BeautifulSoup
 import requests
 from src.proxy_helper import get_requests_proxies
 
@@ -39,6 +38,7 @@ def scrape_hackernews_top(query: str = "", limit: int = 35) -> list[dict]:
 
 
 def parse_generic_html_to_records(html: str, base_url: str = "", limit: int = 100) -> list[dict]:
+    from bs4 import BeautifulSoup
     soup = BeautifulSoup(html, "html.parser")
 
     tables = soup.find_all("table")
